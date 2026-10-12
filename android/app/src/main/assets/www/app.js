@@ -18,6 +18,7 @@ const inputGapY = document.getElementById('input-gap-y');
 const inputPrefix = document.getElementById('input-prefix');
 const inputFormat = document.getElementById('input-format');
 const inputQuality = document.getElementById('input-quality');
+const btnSaveGallery = document.getElementById('btn-save-gallery');
 const btnDownloadAll = document.getElementById('btn-download-all');
 const resultsGrid = document.getElementById('results-grid');
 const previewCount = document.getElementById('preview-count');
@@ -107,6 +108,7 @@ function handleFile(file) {
       }
 
       updateGridAndSlices();
+      if (btnSaveGallery) btnSaveGallery.removeAttribute('disabled');
       btnDownloadAll.removeAttribute('disabled');
 
       // On mobile, switch view back to canvas tab so user sees the image
@@ -372,9 +374,12 @@ function updateGridAndSlices() {
     downloadBtn.textContent = 'Save';
     downloadBtn.addEventListener('click', () => {
       const fullFilename = `${filename}.${fileExtension}`;
-      if (window.AndroidBridge && window.AndroidBridge.saveBase64File) {
+      if (window.AndroidBridge && window.AndroidBridge.saveImageToGallery) {
         const rawBase64 = dataUrl.split(',')[1];
-        window.AndroidBridge.saveBase64File(fullFilename, rawBase64, format);
+        const ok = window.AndroidBridge.saveImageToGallery(fullFilename, rawBase64, format);
+        if (ok && window.AndroidBridge.showToast) {
+          window.AndroidBridge.showToast(`Saved to Pictures/GridSplitter: ${fullFilename}`);
+        }
       } else {
         const a = document.createElement('a');
         a.href = dataUrl;
@@ -521,6 +526,55 @@ window.addEventListener('mouseup', handlePointerUp);
 canvas.addEventListener('touchstart', handlePointerDown, { passive: false });
 window.addEventListener('touchmove', handlePointerMove, { passive: false });
 window.addEventListener('touchend', handlePointerUp);
+
+// Save All to Phone Gallery implementation
+if (btnSaveGallery) {
+  btnSaveGallery.addEventListener('click', async () => {
+    if (currentSlices.length === 0) return;
+
+    btnSaveGallery.textContent = 'Saving to Gallery...';
+    btnSaveGallery.disabled = true;
+
+    try {
+      if (window.AndroidBridge && window.AndroidBridge.saveImageToGallery) {
+        let count = 0;
+        for (const slice of currentSlices) {
+          const rawBase64 = slice.dataUrl.split(',')[1];
+          const ok = window.AndroidBridge.saveImageToGallery(slice.filename, rawBase64, inputFormat.value);
+          if (ok) count++;
+        }
+        if (window.AndroidBridge.showToast) {
+          window.AndroidBridge.showToast(`✓ Saved ${count} photos directly to Pictures/GridSplitter!`);
+        }
+      } else {
+        // Desktop browser fallback: download individual images directly
+        for (let i = 0; i < currentSlices.length; i++) {
+          const slice = currentSlices[i];
+          const a = document.createElement('a');
+          a.href = slice.dataUrl;
+          a.download = slice.filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          await new Promise(r => setTimeout(r, 150));
+        }
+      }
+    } catch (err) {
+      console.error('Error saving to gallery', err);
+      alert('Failed to save images: ' + err.message);
+    } finally {
+      btnSaveGallery.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        Save All to Phone Gallery
+      `;
+      btnSaveGallery.disabled = false;
+    }
+  });
+}
 
 // Download All ZIP implementation
 btnDownloadAll.addEventListener('click', async () => {

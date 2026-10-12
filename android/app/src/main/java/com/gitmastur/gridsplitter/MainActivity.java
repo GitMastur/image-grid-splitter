@@ -54,7 +54,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
 
-        // Native Android Bridge for saving photos/ZIPs to Downloads
+        // Native Android Bridge for saving photos directly to Gallery & Downloads
         webView.addJavascriptInterface(new AndroidBridge(), "AndroidBridge");
 
         webView.setWebViewClient(new WebViewClient());
@@ -113,6 +113,57 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public class AndroidBridge {
+
+        /**
+         * Directly saves an image to the Android system Photo Gallery under Pictures/GridSplitter
+         */
+        @JavascriptInterface
+        public boolean saveImageToGallery(final String filename, final String base64Data, final String mimeType) {
+            try {
+                byte[] bytes = Base64.decode(base64Data, Base64.DEFAULT);
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.Images.Media.DISPLAY_NAME, filename);
+                    values.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
+                    values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/GridSplitter");
+                    values.put(MediaStore.Images.Media.IS_PENDING, 1);
+
+                    Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                    if (uri != null) {
+                        try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                            if (os != null) {
+                                os.write(bytes);
+                                os.flush();
+                            }
+                        }
+                        values.clear();
+                        values.put(MediaStore.Images.Media.IS_PENDING, 0);
+                        getContentResolver().update(uri, values, null, null);
+                        return true;
+                    }
+                } else {
+                    File picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+                    File appDir = new File(picturesDir, "GridSplitter");
+                    if (!appDir.exists()) appDir.mkdirs();
+                    File file = new File(appDir, filename);
+                    try (FileOutputStream fos = new FileOutputStream(file)) {
+                        fos.write(bytes);
+                        fos.flush();
+                    }
+                    sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(file)));
+                    return true;
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error saving to gallery", e);
+                return false;
+            }
+            return false;
+        }
+
+        /**
+         * Saves ZIP archives or generic files into the system Downloads folder
+         */
         @JavascriptInterface
         public void saveBase64File(final String filename, final String base64Data, final String mimeType) {
             new Thread(() -> {
@@ -153,6 +204,11 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(() -> Toast.makeText(MainActivity.this, "Error saving: " + e.getMessage(), Toast.LENGTH_LONG).show());
                 }
             }).start();
+        }
+
+        @JavascriptInterface
+        public void showToast(final String message) {
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show());
         }
     }
 }
