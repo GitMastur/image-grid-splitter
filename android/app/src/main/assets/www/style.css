@@ -445,6 +445,37 @@ input[type="number"]:focus, input[type="text"]:focus, select:focus {
   filter: none;
 }
 
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:active, .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.btn-sm {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  border-radius: var(--radius-sm);
+}
+
+.line-adjust-hint {
+  padding: 0.55rem 0.75rem;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px dashed rgba(99, 102, 241, 0.35);
+  border-radius: var(--radius-sm);
+  font-size: 0.775rem;
+  color: #c7d2fe;
+  line-height: 1.35;
+}
+
+.line-adjust-hint strong {
+  color: #ffffff;
+}
+
 /* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

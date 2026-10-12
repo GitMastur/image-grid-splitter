@@ -8,6 +8,7 @@ const ctx = canvas.getContext('2d');
 const chkAutodetect = document.getElementById('chk-autodetect');
 const inputCols = document.getElementById('input-cols');
 const inputRows = document.getElementById('input-rows');
+const btnResetLines = document.getElementById('btn-reset-lines');
 const inputMarginLeft = document.getElementById('input-margin-left');
 const inputMarginRight = document.getElementById('input-margin-right');
 const inputMarginTop = document.getElementById('input-margin-top');
@@ -28,9 +29,10 @@ const appContainer = document.querySelector('.app-container');
 // State
 let uploadedImage = null;
 let currentSlices = [];
-let activeHandle = null;
-const handleVisualRadius = 8;
-const handleTouchHitRadius = 24; // Generous tap target for mobile touchscreens
+let customVLines = []; // Array of vertical line x-coordinates [x0, x1, ..., xCols]
+let customHLines = []; // Array of horizontal line y-coordinates [y0, y1, ..., yRows]
+let activeHandle = null; // 'v-i', 'h-j', 'corner-nw', 'corner-ne', 'corner-sw', 'corner-se'
+const handleTouchHitRadius = 26; // Generous tap target for mobile touchscreens and desktop
 
 // Mobile Navigation
 const navTabs = document.querySelectorAll('.nav-tab');
@@ -107,7 +109,9 @@ function handleFile(file) {
         }
       }
 
+      initGridLines(true);
       updateGridAndSlices();
+
       if (btnSaveGallery) btnSaveGallery.removeAttribute('disabled');
       btnDownloadAll.removeAttribute('disabled');
 
@@ -209,7 +213,7 @@ function estimateGridLayout(img) {
             const err = Math.abs((p / totalLength) - targetRatio);
             if (err < minErr) minErr = err;
           }
-          if (minErr < 0.035) { // Error tolerance
+          if (minErr < 0.035) {
             matched++;
             errSum += minErr;
           }
@@ -242,12 +246,93 @@ inputFormat.addEventListener('change', () => {
   updateGridAndSlices();
 });
 
-[
-  inputCols, inputRows,
-  inputMarginLeft, inputMarginRight, inputMarginTop, inputMarginBottom,
-  inputGapX, inputGapY, inputPrefix, inputQuality
-].forEach(input => {
-  input.addEventListener('input', updateGridAndSlices);
+// Grid line initialization
+function initGridLines(forceReset = false) {
+  if (!uploadedImage) return;
+
+  const cols = Math.max(1, parseInt(inputCols.value) || 1);
+  const rows = Math.max(1, parseInt(inputRows.value) || 1);
+  const imgW = uploadedImage.naturalWidth;
+  const imgH = uploadedImage.naturalHeight;
+
+  const mLeft = Math.max(0, parseInt(inputMarginLeft.value) || 0);
+  const mRight = Math.max(0, parseInt(inputMarginRight.value) || 0);
+  const mTop = Math.max(0, parseInt(inputMarginTop.value) || 0);
+  const mBottom = Math.max(0, parseInt(inputMarginBottom.value) || 0);
+
+  // If force reset or column count changed, recalculate evenly
+  if (forceReset || customVLines.length !== cols + 1) {
+    customVLines = [];
+    const activeW = Math.max(cols * 15, imgW - mLeft - mRight);
+    for (let c = 0; c <= cols; c++) {
+      customVLines.push(Math.round(mLeft + (c * activeW) / cols));
+    }
+  }
+
+  // If force reset or row count changed, recalculate evenly
+  if (forceReset || customHLines.length !== rows + 1) {
+    customHLines = [];
+    const activeH = Math.max(rows * 15, imgH - mTop - mBottom);
+    for (let r = 0; r <= rows; r++) {
+      customHLines.push(Math.round(mTop + (r * activeH) / rows));
+    }
+  }
+}
+
+function syncMarginsFromInputs() {
+  if (!uploadedImage) return;
+  const imgW = uploadedImage.naturalWidth;
+  const imgH = uploadedImage.naturalHeight;
+  const cols = Math.max(1, parseInt(inputCols.value) || 1);
+  const rows = Math.max(1, parseInt(inputRows.value) || 1);
+
+  const mLeft = Math.max(0, parseInt(inputMarginLeft.value) || 0);
+  const mRight = Math.max(0, parseInt(inputMarginRight.value) || 0);
+  const mTop = Math.max(0, parseInt(inputMarginTop.value) || 0);
+  const mBottom = Math.max(0, parseInt(inputMarginBottom.value) || 0);
+
+  if (customVLines.length !== cols + 1 || customHLines.length !== rows + 1 ||
+      mLeft >= (customVLines[1] || imgW) || (imgW - mRight) <= (customVLines[cols - 1] || 0) ||
+      mTop >= (customHLines[1] || imgH) || (imgH - mBottom) <= (customHLines[rows - 1] || 0)) {
+    initGridLines(true);
+  } else {
+    customVLines[0] = mLeft;
+    customVLines[cols] = imgW - mRight;
+    customHLines[0] = mTop;
+    customHLines[rows] = imgH - mBottom;
+  }
+}
+
+// User Control Inputs Listeners
+inputCols.addEventListener('input', () => {
+  initGridLines(true);
+  updateGridAndSlices();
+});
+
+inputRows.addEventListener('input', () => {
+  initGridLines(true);
+  updateGridAndSlices();
+});
+
+if (btnResetLines) {
+  btnResetLines.addEventListener('click', () => {
+    initGridLines(true);
+    updateGridAndSlices();
+    if (window.AndroidBridge && window.AndroidBridge.showToast) {
+      window.AndroidBridge.showToast('Reset lines to equal spacing');
+    }
+  });
+}
+
+[inputMarginLeft, inputMarginRight, inputMarginTop, inputMarginBottom].forEach(inp => {
+  inp.addEventListener('input', () => {
+    syncMarginsFromInputs();
+    updateGridAndSlices();
+  });
+});
+
+[inputGapX, inputGapY, inputPrefix, inputQuality].forEach(inp => {
+  inp.addEventListener('input', updateGridAndSlices);
 });
 
 if (chkAutodetect) {
@@ -257,6 +342,7 @@ if (chkAutodetect) {
       if (detected.cols > 1 || detected.rows > 1) {
         inputCols.value = detected.cols;
         inputRows.value = detected.rows;
+        initGridLines(true);
         updateGridAndSlices();
       }
     }
@@ -273,52 +359,47 @@ function updateGridAndSlices() {
   canvas.width = imgW;
   canvas.height = imgH;
 
+  // Ensure grid lines match current row and col counts
+  initGridLines(false);
+
   // 1. Draw source image
   ctx.drawImage(uploadedImage, 0, 0);
 
-  // 2. Read layout parameters
-  const cols = Math.max(1, parseInt(inputCols.value) || 1);
-  const rows = Math.max(1, parseInt(inputRows.value) || 1);
-
-  const mLeft = Math.max(0, parseInt(inputMarginLeft.value) || 0);
-  const mRight = Math.max(0, parseInt(inputMarginRight.value) || 0);
-  const mTop = Math.max(0, parseInt(inputMarginTop.value) || 0);
-  const mBottom = Math.max(0, parseInt(inputMarginBottom.value) || 0);
+  const cols = customVLines.length - 1;
+  const rows = customHLines.length - 1;
 
   const gapX = Math.max(0, parseInt(inputGapX.value) || 0);
   const gapY = Math.max(0, parseInt(inputGapY.value) || 0);
-
-  const activeW = imgW - mLeft - mRight;
-  const activeH = imgH - mTop - mBottom;
-
-  const totalGapsW = gapX * (cols - 1);
-  const totalGapsH = gapY * (rows - 1);
-
-  const cellW = (activeW - totalGapsW) / cols;
-  const cellH = (activeH - totalGapsH) / rows;
+  const halfGapX = Math.floor(gapX / 2);
+  const halfGapY = Math.floor(gapY / 2);
 
   currentSlices = [];
   resultsGrid.innerHTML = '';
   resultsGrid.classList.remove('empty');
 
-  if (cellW > 0 && cellH > 0 && activeW > 0 && activeH > 0) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const x = mLeft + c * (cellW + gapX);
-        const y = mTop + r * (cellH + gapY);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x1 = customVLines[c];
+      const x2 = customVLines[c + 1];
+      const y1 = customHLines[r];
+      const y2 = customHLines[r + 1];
 
-        if (x + cellW > imgW || y + cellH > imgH) continue;
+      const cellX = Math.min(x1 + halfGapX, x2);
+      const cellY = Math.min(y1 + halfGapY, y2);
+      const cellW = Math.max(1, (x2 - x1) - gapX);
+      const cellH = Math.max(1, (y2 - y1) - gapY);
 
-        currentSlices.push({
-          x: Math.round(x),
-          y: Math.round(y),
-          w: Math.round(cellW),
-          h: Math.round(cellH),
-          row: r + 1,
-          col: c + 1,
-          index: r * cols + c + 1
-        });
-      }
+      if (cellX + cellW > imgW || cellY + cellH > imgH) continue;
+
+      currentSlices.push({
+        x: Math.round(cellX),
+        y: Math.round(cellY),
+        w: Math.round(cellW),
+        h: Math.round(cellH),
+        row: r + 1,
+        col: c + 1,
+        index: r * cols + c + 1
+      });
     }
   }
 
@@ -397,35 +478,147 @@ function updateGridAndSlices() {
     slice.filename = `${filename}.${fileExtension}`;
   });
 
-  // Render draggable handles on outer active boundary
-  drawBoundaryHandles(mLeft, mTop, imgW - mRight, imgH - mBottom);
+  // Render draggable handles on lines and borders
+  drawLineHandles();
 }
 
-function getBoundaryHandles(x1, y1, x2, y2) {
-  return {
-    nw: { x: x1, y: y1 },
-    ne: { x: x2, y: y1 },
-    sw: { x: x1, y: y2 },
-    se: { x: x2, y: y2 },
-    n:  { x: (x1 + x2) / 2, y: y1 },
-    s:  { x: (x1 + x2) / 2, y: y2 },
-    w:  { x: x1, y: (y1 + y2) / 2 },
-    e:  { x: x2, y: (y1 + y2) / 2 }
-  };
-}
+function drawLineHandles() {
+  if (customVLines.length === 0 || customHLines.length === 0) return;
 
-function drawBoundaryHandles(x1, y1, x2, y2) {
-  const handles = getBoundaryHandles(x1, y1, x2, y2);
-  const r = Math.max(handleVisualRadius, Math.floor(canvas.width / 160));
+  const cols = customVLines.length - 1;
+  const rows = customHLines.length - 1;
+  const x0 = customVLines[0];
+  const xCols = customVLines[cols];
+  const y0 = customHLines[0];
+  const yRows = customHLines[rows];
 
-  for (const [key, pos] of Object.entries(handles)) {
+  const rect = canvas.getBoundingClientRect();
+  const scale = (rect.width > 0) ? (canvas.width / rect.width) : 1;
+  const baseR = Math.max(8, Math.round(9 * scale));
+  const pillW = Math.max(26, Math.round(30 * scale));
+  const pillH = Math.max(16, Math.round(18 * scale));
+  const pillRadius = Math.max(4, Math.round(6 * scale));
+  const fontSize = Math.max(11, Math.round(13 * scale));
+
+  function drawRoundedRect(x, y, w, h, r) {
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // 1. Draw vertical divider lines & pill handles
+  for (let c = 1; c < cols; c++) {
+    const vx = customVLines[c];
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(vx, y0);
+    ctx.lineTo(vx, yRows);
+    ctx.strokeStyle = '#818cf8';
+    ctx.lineWidth = Math.max(2, Math.round(2 * scale));
+    ctx.setLineDash([6 * scale, 4 * scale]);
+    ctx.stroke();
+    ctx.restore();
+
+    // Grip pill at vertical center
+    const cy = (y0 + yRows) / 2;
+    ctx.save();
+    drawRoundedRect(vx - pillH / 2, cy - pillW / 2, pillH, pillW, pillRadius);
+    ctx.fillStyle = '#4f46e5';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.5, Math.round(2 * scale));
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('↔', vx, cy);
+    ctx.restore();
+  }
+
+  // 2. Draw horizontal divider lines & pill handles
+  for (let r = 1; r < rows; r++) {
+    const hy = customHLines[r];
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x0, hy);
+    ctx.lineTo(xCols, hy);
+    ctx.strokeStyle = '#818cf8';
+    ctx.lineWidth = Math.max(2, Math.round(2 * scale));
+    ctx.setLineDash([6 * scale, 4 * scale]);
+    ctx.stroke();
+    ctx.restore();
+
+    // Grip pill at horizontal center
+    const cx = (x0 + xCols) / 2;
+    ctx.save();
+    drawRoundedRect(cx - pillW / 2, hy - pillH / 2, pillW, pillH, pillRadius);
+    ctx.fillStyle = '#4f46e5';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.5, Math.round(2 * scale));
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('↕', cx, hy);
+    ctx.restore();
+  }
+
+  // 3. Draw outer boundary rectangle
+  ctx.save();
+  ctx.strokeStyle = '#6366f1';
+  ctx.lineWidth = Math.max(2, Math.round(2.5 * scale));
+  ctx.strokeRect(x0, y0, xCols - x0, yRows - y0);
+  ctx.restore();
+
+  // 4. Draw outer boundary mid-point handles (w, e, n, s)
+  const edgeHandles = [
+    { x: x0, y: (y0 + yRows) / 2 },
+    { x: xCols, y: (y0 + yRows) / 2 },
+    { x: (x0 + xCols) / 2, y: y0 },
+    { x: (x0 + xCols) / 2, y: yRows }
+  ];
+  for (const pos of edgeHandles) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, Math.round(baseR * 0.8), 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff';
     ctx.fill();
-    ctx.lineWidth = Math.max(2, r / 3);
     ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = Math.max(2, Math.round(2 * scale));
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // 5. Draw 4 corner handles (nw, ne, sw, se)
+  const corners = [
+    { x: x0, y: y0 },
+    { x: xCols, y: y0 },
+    { x: x0, y: yRows },
+    { x: xCols, y: yRows }
+  ];
+  for (const pos of corners) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, baseR, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = Math.max(2, Math.round(2.5 * scale));
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -444,72 +637,160 @@ function getEventCanvasCoords(e) {
   };
 }
 
+function findHandleUnderPoint(x, y) {
+  if (!uploadedImage || customVLines.length === 0 || customHLines.length === 0) return null;
+
+  const cols = customVLines.length - 1;
+  const rows = customHLines.length - 1;
+  const rect = canvas.getBoundingClientRect();
+  const scaleFactor = (rect.width > 0) ? (canvas.width / rect.width) : 1;
+  const hitRadius = handleTouchHitRadius * scaleFactor;
+
+  const x0 = customVLines[0];
+  const xCols = customVLines[cols];
+  const y0 = customHLines[0];
+  const yRows = customHLines[rows];
+
+  // 1. Check 4 corners
+  if (Math.hypot(x - x0, y - y0) <= hitRadius) return 'corner-nw';
+  if (Math.hypot(x - xCols, y - y0) <= hitRadius) return 'corner-ne';
+  if (Math.hypot(x - x0, y - yRows) <= hitRadius) return 'corner-sw';
+  if (Math.hypot(x - xCols, y - yRows) <= hitRadius) return 'corner-se';
+
+  // 2. Check internal vertical line pills
+  for (let c = 1; c < cols; c++) {
+    const vx = customVLines[c];
+    const vy = (y0 + yRows) / 2;
+    if (Math.hypot(x - vx, y - vy) <= hitRadius * 1.5) {
+      return `v-${c}`;
+    }
+  }
+
+  // 3. Check internal horizontal line pills
+  for (let r = 1; r < rows; r++) {
+    const hx = (x0 + xCols) / 2;
+    const hy = customHLines[r];
+    if (Math.hypot(x - hx, y - hy) <= hitRadius * 1.5) {
+      return `h-${r}`;
+    }
+  }
+
+  // 4. Check entire vertical lines (internal and outer)
+  let bestV = null;
+  let bestVDist = Infinity;
+  for (let c = 0; c <= cols; c++) {
+    const vx = customVLines[c];
+    if (y >= y0 - hitRadius && y <= yRows + hitRadius) {
+      const dist = Math.abs(x - vx);
+      if (dist <= hitRadius && dist < bestVDist) {
+        bestVDist = dist;
+        bestV = `v-${c}`;
+      }
+    }
+  }
+
+  // 5. Check entire horizontal lines (internal and outer)
+  let bestH = null;
+  let bestHDist = Infinity;
+  for (let r = 0; r <= rows; r++) {
+    const hy = customHLines[r];
+    if (x >= x0 - hitRadius && x <= xCols + hitRadius) {
+      const dist = Math.abs(y - hy);
+      if (dist <= hitRadius && dist < bestHDist) {
+        bestHDist = dist;
+        bestH = `h-${r}`;
+      }
+    }
+  }
+
+  if (bestV && bestH) {
+    return bestVDist < bestHDist ? bestV : bestH;
+  }
+  return bestV || bestH || null;
+}
+
 // Drag & Touch Handle Listeners
 function handlePointerDown(e) {
   if (!uploadedImage) return;
 
   const { x, y } = getEventCanvasCoords(e);
-  const imgW = uploadedImage.naturalWidth;
-  const imgH = uploadedImage.naturalHeight;
+  const handle = findHandleUnderPoint(x, y);
 
-  const mLeft = parseInt(inputMarginLeft.value) || 0;
-  const mRight = parseInt(inputMarginRight.value) || 0;
-  const mTop = parseInt(inputMarginTop.value) || 0;
-  const mBottom = parseInt(inputMarginBottom.value) || 0;
-
-  const x1 = mLeft;
-  const y1 = mTop;
-  const x2 = imgW - mRight;
-  const y2 = imgH - mBottom;
-
-  const handles = getBoundaryHandles(x1, y1, x2, y2);
-  const rect = canvas.getBoundingClientRect();
-  const scaleFactor = canvas.width / rect.width;
-  const hitRadius = handleTouchHitRadius * scaleFactor;
-
-  activeHandle = null;
-  for (const [key, pos] of Object.entries(handles)) {
-    const dist = Math.hypot(x - pos.x, y - pos.y);
-    if (dist <= hitRadius) {
-      activeHandle = key;
-      if (e.cancelable) e.preventDefault();
-      break;
-    }
+  if (handle) {
+    activeHandle = handle;
+    if (e.cancelable) e.preventDefault();
   }
 }
 
 function handlePointerMove(e) {
-  if (!uploadedImage || !activeHandle) return;
-  if (e.cancelable) e.preventDefault();
+  if (!uploadedImage) return;
 
   const { x, y } = getEventCanvasCoords(e);
+
+  // If not currently dragging, update hover cursor on canvas
+  if (!activeHandle) {
+    const handle = findHandleUnderPoint(x, y);
+    if (!handle) {
+      canvas.style.cursor = 'default';
+    } else if (handle === 'corner-nw' || handle === 'corner-se') {
+      canvas.style.cursor = 'nwse-resize';
+    } else if (handle === 'corner-ne' || handle === 'corner-sw') {
+      canvas.style.cursor = 'nesw-resize';
+    } else if (handle.startsWith('v-')) {
+      canvas.style.cursor = 'col-resize';
+    } else if (handle.startsWith('h-')) {
+      canvas.style.cursor = 'row-resize';
+    }
+    return;
+  }
+
+  if (e.cancelable) e.preventDefault();
+
   const imgW = uploadedImage.naturalWidth;
   const imgH = uploadedImage.naturalHeight;
-  const minDim = 30;
-
-  let mLeft = parseInt(inputMarginLeft.value) || 0;
-  let mRight = parseInt(inputMarginRight.value) || 0;
-  let mTop = parseInt(inputMarginTop.value) || 0;
-  let mBottom = parseInt(inputMarginBottom.value) || 0;
+  const cols = customVLines.length - 1;
+  const rows = customHLines.length - 1;
+  const minCellSize = 15;
 
   const clampedX = Math.max(0, Math.min(imgW, x));
   const clampedY = Math.max(0, Math.min(imgH, y));
 
-  if (activeHandle.includes('w')) {
-    const newLeft = Math.round(clampedX);
-    if (imgW - mRight - newLeft >= minDim) inputMarginLeft.value = newLeft;
-  }
-  if (activeHandle.includes('e')) {
-    const newRight = Math.round(imgW - clampedX);
-    if (imgW - mLeft - newRight >= minDim) inputMarginRight.value = newRight;
-  }
-  if (activeHandle.includes('n')) {
-    const newTop = Math.round(clampedY);
-    if (imgH - mBottom - newTop >= minDim) inputMarginTop.value = newTop;
-  }
-  if (activeHandle.includes('s')) {
-    const newBottom = Math.round(imgH - clampedY);
-    if (imgH - mTop - newBottom >= minDim) inputMarginBottom.value = newBottom;
+  if (activeHandle.startsWith('v-')) {
+    const c = parseInt(activeHandle.split('-')[1]);
+    const minX = (c === 0) ? 0 : customVLines[c - 1] + minCellSize;
+    const maxX = (c === cols) ? imgW : customVLines[c + 1] - minCellSize;
+    customVLines[c] = Math.max(minX, Math.min(maxX, Math.round(clampedX)));
+
+    if (c === 0) inputMarginLeft.value = customVLines[0];
+    if (c === cols) inputMarginRight.value = imgW - customVLines[cols];
+  } else if (activeHandle.startsWith('h-')) {
+    const r = parseInt(activeHandle.split('-')[1]);
+    const minY = (r === 0) ? 0 : customHLines[r - 1] + minCellSize;
+    const maxY = (r === rows) ? imgH : customHLines[r + 1] - minCellSize;
+    customHLines[r] = Math.max(minY, Math.min(maxY, Math.round(clampedY)));
+
+    if (r === 0) inputMarginTop.value = customHLines[0];
+    if (r === rows) inputMarginBottom.value = imgH - customHLines[rows];
+  } else if (activeHandle === 'corner-nw') {
+    customVLines[0] = Math.max(0, Math.min(customVLines[1] - minCellSize, Math.round(clampedX)));
+    customHLines[0] = Math.max(0, Math.min(customHLines[1] - minCellSize, Math.round(clampedY)));
+    inputMarginLeft.value = customVLines[0];
+    inputMarginTop.value = customHLines[0];
+  } else if (activeHandle === 'corner-ne') {
+    customVLines[cols] = Math.max(customVLines[cols - 1] + minCellSize, Math.min(imgW, Math.round(clampedX)));
+    customHLines[0] = Math.max(0, Math.min(customHLines[1] - minCellSize, Math.round(clampedY)));
+    inputMarginRight.value = imgW - customVLines[cols];
+    inputMarginTop.value = customHLines[0];
+  } else if (activeHandle === 'corner-sw') {
+    customVLines[0] = Math.max(0, Math.min(customVLines[1] - minCellSize, Math.round(clampedX)));
+    customHLines[rows] = Math.max(customHLines[rows - 1] + minCellSize, Math.min(imgH, Math.round(clampedY)));
+    inputMarginLeft.value = customVLines[0];
+    inputMarginBottom.value = imgH - customHLines[rows];
+  } else if (activeHandle === 'corner-se') {
+    customVLines[cols] = Math.max(customVLines[cols - 1] + minCellSize, Math.min(imgW, Math.round(clampedX)));
+    customHLines[rows] = Math.max(customHLines[rows - 1] + minCellSize, Math.min(imgH, Math.round(clampedY)));
+    inputMarginRight.value = imgW - customVLines[cols];
+    inputMarginBottom.value = imgH - customHLines[rows];
   }
 
   updateGridAndSlices();
@@ -517,6 +798,7 @@ function handlePointerMove(e) {
 
 function handlePointerUp() {
   activeHandle = null;
+  canvas.style.cursor = 'default';
 }
 
 canvas.addEventListener('mousedown', handlePointerDown);
