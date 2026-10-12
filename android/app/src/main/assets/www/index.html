@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>GridSplitter - Headshot Splitter</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+  <!-- Bundled local JSZip with CDN fallback for full offline support on Android -->
+  <script src="jszip.min.js"></script>
+  <script>
+    if (typeof JSZip === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <defs>
+          <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1" />
+            <stop offset="100%" stop-color="#a855f7" />
+          </linearGradient>
+        </defs>
+        <path d="M3 21h18" />
+        <path d="M3 7v1a3 3 0 0 0 6 0V7" />
+        <path d="M9 7v1a3 3 0 0 0 6 0V7" />
+        <path d="M15 7v1a3 3 0 0 0 6 0V7" />
+        <path d="M19 16v5" />
+        <path d="M5 16v5" />
+        <path d="M12 12v9" />
+      </svg>
+      <span>GridSplitter</span>
+    </div>
+    <div class="subtitle">Extract individual headshots from grids instantly</div>
+  </header>
+
+  <!-- Mobile Tab Switcher -->
+  <nav class="mobile-nav" id="mobile-nav">
+    <button class="nav-tab active" data-tab="workspace">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      <span>Canvas</span>
+    </button>
+    <button class="nav-tab" data-tab="sidebar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+      <span>Settings</span>
+    </button>
+    <button class="nav-tab" data-tab="results">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span>Slices</span>
+      <span class="badge" id="mobile-badge">0</span>
+    </button>
+  </nav>
+
+  <div class="app-container">
+    <!-- Sidebar controls -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Upload Section -->
+      <div class="control-group">
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          Upload Image
+        </h2>
+        <div class="upload-zone" id="drop-zone">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+          <span>Tap to choose from Gallery or Camera</span>
+          <input type="file" id="file-input" accept="image/*">
+        </div>
+      </div>
+
+      <!-- Auto-detect Toggle -->
+      <div class="control-group">
+        <label class="checkbox-container">
+          <input type="checkbox" id="chk-autodetect" checked>
+          <span class="checkmark"></span>
+          <span class="checkbox-label">Auto-detect Grid Layout</span>
+        </label>
+        <div class="hint-text">Automatically identifies column & row divisions from image seams</div>
+      </div>
+
+      <!-- Grid Dimensions -->
+      <div class="control-group">
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" />
+            <rect x="14" y="3" width="7" height="7" />
+            <rect x="14" y="14" width="7" height="7" />
+            <rect x="3" y="14" width="7" height="7" />
+          </svg>
+          Grid Dimensions
+        </h2>
+        <div class="control-row">
+          <div class="control-input">
+            <label for="input-cols">Columns</label>
+            <input type="number" id="input-cols" value="3" min="1" max="50">
+          </div>
+          <div class="control-input">
+            <label for="input-rows">Rows</label>
+            <input type="number" id="input-rows" value="2" min="1" max="50">
+          </div>
+        </div>
+      </div>
+
+      <!-- Margins & Padding (Offsets in Original Pixels) -->
+      <div class="control-group">
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M9 3v18" />
+            <path d="M15 3v18" />
+            <path d="M3 9h18" />
+            <path d="M3 15h18" />
+          </svg>
+          Offset & Borders (px)
+        </h2>
+        <div class="control-row">
+          <div class="control-input">
+            <label for="input-margin-left">Left Edge</label>
+            <input type="number" id="input-margin-left" value="0" min="0">
+          </div>
+          <div class="control-input">
+            <label for="input-margin-right">Right Edge</label>
+            <input type="number" id="input-margin-right" value="0" min="0">
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-input">
+            <label for="input-margin-top">Top Edge</label>
+            <input type="number" id="input-margin-top" value="0" min="0">
+          </div>
+          <div class="control-input">
+            <label for="input-margin-bottom">Bottom Edge</label>
+            <input type="number" id="input-margin-bottom" value="0" min="0">
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-input">
+            <label for="input-gap-x">Gap Horizontal</label>
+            <input type="number" id="input-gap-x" value="0" min="0">
+          </div>
+          <div class="control-input">
+            <label for="input-gap-y">Gap Vertical</label>
+            <input type="number" id="input-gap-y" value="0" min="0">
+          </div>
+        </div>
+      </div>
+
+      <!-- Export Settings -->
+      <div class="control-group">
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
+          Export Options
+        </h2>
+        <div class="control-input">
+          <label for="input-prefix">Filename Prefix</label>
+          <input type="text" id="input-prefix" value="headshot">
+        </div>
+        <div class="control-row">
+          <div class="control-input">
+            <label for="input-format">Format</label>
+            <select id="input-format">
+              <option value="image/png">PNG</option>
+              <option value="image/jpeg">JPEG</option>
+            </select>
+          </div>
+          <div class="control-input">
+            <label for="input-quality">JPEG Quality</label>
+            <input type="number" id="input-quality" value="95" min="10" max="100" disabled>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-download-all" disabled style="margin-top: 0.5rem;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download All (ZIP)
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="main-workspace" id="workspace">
+      <div class="workspace-canvas-container empty" id="canvas-container">
+        <canvas id="editor-canvas"></canvas>
+      </div>
+
+      <!-- Preview grid of results -->
+      <section class="results-panel" id="results-panel">
+        <div class="results-header">
+          <h3>Individual Previews</h3>
+          <span class="subtitle" id="preview-count">0 images ready</span>
+        </div>
+        <div class="results-grid empty" id="results-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -18,3 +18,12 @@ Thumbs.db
 *.zip
 output/
 downloads/
+
+# Android
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+build_output/
+*.apk
+!android/gradle/wrapper/gradle-wrapper.jar

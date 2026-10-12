@@ -2,11 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Face Crop Studio - Image Grid Splitter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>GridSplitter - Headshot Splitter</title>
+  <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="style.css">
-  <!-- Load JSZip for client-side zipping of cropped images -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha512-XMV7M3F09cqzvc75z4qqz90lY7WcplfdU41pPvx4WbE140J2M1GvE36p985f40z54Xg41m4a10W6eU7OQW414A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <!-- Bundled local JSZip with CDN fallback for full offline support on Android -->
+  <script src="jszip.min.js"></script>
+  <script>
+    if (typeof JSZip === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"><\/script>');
+    }
+  </script>
 </head>
 <body>
   <header>
@@ -31,9 +40,26 @@
     <div class="subtitle">Extract individual headshots from grids instantly</div>
   </header>
 
+  <!-- Mobile Tab Switcher -->
+  <nav class="mobile-nav" id="mobile-nav">
+    <button class="nav-tab active" data-tab="workspace">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      <span>Canvas</span>
+    </button>
+    <button class="nav-tab" data-tab="sidebar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+      <span>Settings</span>
+    </button>
+    <button class="nav-tab" data-tab="results">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span>Slices</span>
+      <span class="badge" id="mobile-badge">0</span>
+    </button>
+  </nav>
+
   <div class="app-container">
     <!-- Sidebar controls -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <!-- Upload Section -->
       <div class="control-group">
         <h2>
@@ -50,9 +76,19 @@
             <circle cx="8.5" cy="8.5" r="1.5" />
             <polyline points="21 15 16 10 5 21" />
           </svg>
-          <span>Drag & drop or click to upload</span>
+          <span>Tap to choose from Gallery or Camera</span>
           <input type="file" id="file-input" accept="image/*">
         </div>
+      </div>
+
+      <!-- Auto-detect Toggle -->
+      <div class="control-group">
+        <label class="checkbox-container">
+          <input type="checkbox" id="chk-autodetect" checked>
+          <span class="checkmark"></span>
+          <span class="checkbox-label">Auto-detect Grid Layout</span>
+        </label>
+        <div class="hint-text">Automatically identifies column & row divisions from image seams</div>
       </div>
 
       <!-- Grid Dimensions -->
@@ -69,11 +105,11 @@
         <div class="control-row">
           <div class="control-input">
             <label for="input-cols">Columns</label>
-            <input type="number" id="input-cols" value="4" min="1" max="50">
+            <input type="number" id="input-cols" value="3" min="1" max="50">
           </div>
           <div class="control-input">
             <label for="input-rows">Rows</label>
-            <input type="number" id="input-rows" value="3" min="1" max="50">
+            <input type="number" id="input-rows" value="2" min="1" max="50">
           </div>
         </div>
       </div>
@@ -136,7 +172,7 @@
         </h2>
         <div class="control-input">
           <label for="input-prefix">Filename Prefix</label>
-          <input type="text" id="input-prefix" value="headshot" style="background: rgba(10, 14, 23, 0.6); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.5rem; border-radius: var(--radius-sm);">
+          <input type="text" id="input-prefix" value="headshot">
         </div>
         <div class="control-row">
           <div class="control-input">
@@ -163,13 +199,13 @@
     </aside>
 
     <!-- Main Workspace -->
-    <main class="main-workspace">
+    <main class="main-workspace" id="workspace">
       <div class="workspace-canvas-container empty" id="canvas-container">
         <canvas id="editor-canvas"></canvas>
       </div>
 
       <!-- Preview grid of results -->
-      <section class="results-panel">
+      <section class="results-panel" id="results-panel">
         <div class="results-header">
           <h3>Individual Previews</h3>
           <span class="subtitle" id="preview-count">0 images ready</span>
